@@ -11,10 +11,5 @@
       "src": "/(.*)",
       "dest": "/api/latency.py"
     }
-  ],
-  "functions": {
-    "api/latency.py": {
-      "maxDuration": 30
-    }
-  }
+  ]
 }
