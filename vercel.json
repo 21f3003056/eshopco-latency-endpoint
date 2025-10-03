@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/latency.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/latency.py"
+    }
+  ],
+  "functions": {
+    "api/latency.py": {
+      "maxDuration": 30
+    }
+  }
+}
