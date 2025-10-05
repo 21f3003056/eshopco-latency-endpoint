@@ -54,4 +54,4 @@ async def get_latency_stats(request: Request):
                 }
             )
 
-    return {"regions": results}
+    return {"regions":results}
