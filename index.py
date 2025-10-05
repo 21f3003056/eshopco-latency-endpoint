@@ -1,57 +1,65 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import pandas as pd
+from pydantic import BaseModel
+import json
 import numpy as np
-from pathlib import Path
+import os
 
+# Create FastAPI app instance
 app = FastAPI()
 
-# Enable CORS for all origins
+# Enable CORS for all origins. Note: when allow_origins is ['*'],
+# many browsers will ignore Access-Control-Allow-Credentials if
+# allow_credentials is True. For a true wildcard + credentials,
+# you must set allow_credentials to False or specify explicit origins.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# Load the dataset once when the app starts
-# The data file should be in the same directory as this script
-DATA_FILE = Path(__file__).parent / "q-vercel-latency.json"
-df = pd.read_json(DATA_FILE)
+# ---------- models ----------
+class LatencyRequest(BaseModel):
+    regions: list[str]
+    threshold_ms: float
 
+# ---------- helpers ----------
+def load_telemetry():
+    path = os.path.join(os.path.dirname(__file__), "..", "q-vercel-latency.json")
+    with open(path) as f:
+        records = json.load(f)
+    grouped = {}
+    for r in records:
+        grouped.setdefault(r["region"], []).append(
+            {"latency_ms": r["latency_ms"], "uptime": r["uptime_pct"]}
+        )
+    return grouped
 
+def calc_metrics(latencies, uptimes, threshold, region=None):
+    return {
+        "region": region,
+        "avg_latency": round(float(np.mean(latencies)), 2),
+        "p95_latency": round(float(np.percentile(latencies, 95)), 2),
+        "avg_uptime": round(float(np.mean(uptimes)), 2),
+        "breaches": int(np.sum(np.array(latencies) > threshold)),
+    }
+
+# ---------- routes ----------
 @app.get("/")
-async def root():
-    return {"message": "Vercel Latency Analytics API is running."}
+def health():
+    return {"msg": "FastAPI on Vercel works fine! :-) hello rituraj here :-) Oooooo! it working"}
 
-
-@app.post("/api/")
-async def get_latency_stats(request: Request):
-    payload = await request.json()
-    regions_to_process = payload.get("regions", [])
-    threshold = payload.get("threshold_ms", 200)
-
-    results = []
-
-    for region in regions_to_process:
-        region_df = df[df["region"] == region]
-
-        if not region_df.empty:
-            avg_latency = round(region_df["latency_ms"].mean(), 2)
-            p95_latency = round(np.percentile(region_df["latency_ms"], 95), 2)
-            avg_uptime = round(region_df["uptime_pct"].mean(), 3)
-            breaches = int(region_df[region_df["latency_ms"] > threshold].shape[0])
-
-            results.append(
-                {
-                    "region": region,
-                    "avg_latency": avg_latency,
-                    "p95_latency": p95_latency,
-                    "avg_uptime": avg_uptime,
-                    "breaches": breaches,
-                }
-            )
-
-    return {"regions":results}
+@app.post("/api/latency")
+def latency_metrics(body: LatencyRequest):
+    telem = load_telemetry()
+    resp = []  # Initialize resp as a list
+    for reg in body.regions:
+        if reg not in telem:
+            raise HTTPException(status_code=400, detail=f"region '{reg}' not found")
+        lat = [x["latency_ms"] for x in telem[reg]]
+        upt = [x["uptime"] for x in telem[reg]]
+        resp.append(calc_metrics(lat, upt, body.threshold_ms, region=reg))
+    return {"regions": resp}
