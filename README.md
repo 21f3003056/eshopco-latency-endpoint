@@ -4,7 +4,7 @@ Serverless endpoint for monitoring deployment latency metrics.
 
 ## API Usage
 
-**Endpoint:** `POST /api/latency`
+**Endpoint:** `POST /app/index`
 
 **Request:**
 ```json
